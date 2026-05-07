@@ -61,6 +61,18 @@ export default async function DashboardPage() {
 
   const totalContacts = await prisma.contact.count();
 
+  // Team stats from DB
+  const allContacts = await prisma.contact.findMany({
+    select: { assignedTo: true, status: true },
+  });
+  const teamMap: Record<string, { total: number; done: number }> = {};
+  for (const c of allContacts) {
+    if (!teamMap[c.assignedTo]) teamMap[c.assignedTo] = { total: 0, done: 0 };
+    teamMap[c.assignedTo].total++;
+    if (c.status === "DONE") teamMap[c.assignedTo].done++;
+  }
+  const teamStats = Object.entries(teamMap).sort((a, b) => b[1].done - a[1].done);
+
   return (
     <div className="min-h-screen">
       <header className="bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between">
@@ -125,6 +137,29 @@ export default async function DashboardPage() {
         </div>
 
         <div className="mt-10 pt-8 border-t border-gray-200">
+          <h3 className="text-sm font-medium text-gray-700 mb-3">Team Progress</h3>
+          <div className="space-y-2">
+            {teamStats.map(([name, { total, done }]) => {
+              const pct = total > 0 ? Math.round((done / total) * 100) : 0;
+              return (
+                <div key={name} className="bg-white rounded-lg border border-gray-200 px-4 py-3">
+                  <div className="flex items-center justify-between mb-1.5">
+                    <span className="text-sm font-medium text-gray-800">{name}</span>
+                    <span className="text-xs text-gray-500">{done} / {total} sent</span>
+                  </div>
+                  <div className="w-full bg-gray-100 rounded-full h-1.5">
+                    <div
+                      className="bg-green-500 h-1.5 rounded-full transition-all"
+                      style={{ width: `${pct}%` }}
+                    />
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+
+        <div className="mt-6 pt-6 border-t border-gray-200">
           <div className="flex items-center justify-between mb-1">
             <h3 className="text-sm font-medium text-gray-700">Contact List</h3>
             <span className="text-xs text-gray-400">{totalContacts} contacts loaded</span>
