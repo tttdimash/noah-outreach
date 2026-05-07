@@ -6,6 +6,7 @@ import { getSheetStatuses } from "@/lib/sheets";
 import Link from "next/link";
 import SignOutButton from "@/components/SignOutButton";
 import CSVUpload from "@/components/CSVUpload";
+import SyncSheetButton from "@/components/SyncSheetButton";
 
 async function resolveAssignedTo(userName: string): Promise<string | null> {
   const rows = await prisma.contact.findMany({
@@ -73,6 +74,7 @@ export default async function DashboardPage() {
             )}
           </p>
         </div>
+        <SyncSheetButton />
         <SignOutButton />
       </header>
 
