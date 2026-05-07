@@ -2,6 +2,7 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
+import { getSheetStatuses } from "@/lib/sheets";
 import Link from "next/link";
 import SignOutButton from "@/components/SignOutButton";
 import CSVUpload from "@/components/CSVUpload";
@@ -32,14 +33,18 @@ export default async function DashboardPage() {
   let days: { day: string; total: number; done: number; notStarted: number }[] = [];
 
   if (assignedTo) {
-    const contacts = await prisma.contact.findMany({
-      where: { assignedTo },
-      select: { day: true, status: true },
-    });
+    const [contacts, sheetStatuses] = await Promise.all([
+      prisma.contact.findMany({
+        where: { assignedTo },
+        select: { day: true, rowIndex: true, status: true },
+      }),
+      getSheetStatuses(session.accessToken ?? ""),
+    ]);
 
     const map: Record<string, { total: number; done: number; notStarted: number }> = {};
     for (const c of contacts) {
-      const status = c.status;
+      const sheetStatus = sheetStatuses.get(c.rowIndex);
+      const status = sheetStatus ?? c.status;
       if (!map[c.day]) map[c.day] = { total: 0, done: 0, notStarted: 0 };
       map[c.day].total++;
       if (status === "DONE") map[c.day].done++;
