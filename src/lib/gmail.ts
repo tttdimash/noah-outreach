@@ -1,5 +1,7 @@
 import { google } from "googleapis";
 
+const CC_ADDRESSES = "ata@noahlabs.ai, murat@noahlabs.ai";
+
 export function buildMimeMessage({
   to,
   from,
@@ -11,12 +13,12 @@ export function buildMimeMessage({
   subject: string;
   body: string;
 }): string {
-  // Encode subject with RFC 2047 so non-ASCII chars (em dash, etc.) render correctly
   const encodedSubject = `=?UTF-8?B?${Buffer.from(subject, "utf-8").toString("base64")}?=`;
 
   const message = [
     `From: ${from}`,
     `To: ${to}`,
+    `Cc: ${CC_ADDRESSES}`,
     `Subject: ${encodedSubject}`,
     "MIME-Version: 1.0",
     "Content-Type: text/plain; charset=utf-8",
