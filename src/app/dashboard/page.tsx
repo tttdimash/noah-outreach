@@ -32,19 +32,18 @@ export default async function DashboardPage() {
 
   let days: { day: string; total: number; done: number; notStarted: number }[] = [];
 
-  if (assignedTo) {
-    const [contacts, sheetStatuses] = await Promise.all([
-      prisma.contact.findMany({
-        where: { assignedTo },
-        select: { day: true, rowIndex: true, status: true },
-      }),
-      getSheetStatuses(session.accessToken ?? ""),
-    ]);
+  const [allContacts, sheetStatuses] = await Promise.all([
+    prisma.contact.findMany({
+      select: { day: true, assignedTo: true, rowIndex: true, status: true },
+    }),
+    assignedTo ? getSheetStatuses(session.accessToken ?? "") : Promise.resolve(new Map<number, string>()),
+  ]);
 
+  if (assignedTo) {
+    const myContacts = allContacts.filter((c) => c.assignedTo === assignedTo);
     const map: Record<string, { total: number; done: number; notStarted: number }> = {};
-    for (const c of contacts) {
-      const sheetStatus = sheetStatuses.get(c.rowIndex);
-      const status = sheetStatus ?? c.status;
+    for (const c of myContacts) {
+      const status = sheetStatuses.get(c.rowIndex) ?? c.status;
       if (!map[c.day]) map[c.day] = { total: 0, done: 0, notStarted: 0 };
       map[c.day].total++;
       if (status === "DONE") map[c.day].done++;
@@ -59,17 +58,18 @@ export default async function DashboardPage() {
       .map((d) => ({ day: d, ...map[d] }));
   }
 
-  const totalContacts = await prisma.contact.count();
+  const totalContacts = allContacts.length;
 
-  // Team stats from DB
-  const allContacts = await prisma.contact.findMany({
-    select: { assignedTo: true, status: true },
-  });
+  // Team stats — use sheet status for logged-in user's contacts, DB for others
   const teamMap: Record<string, { total: number; done: number }> = {};
   for (const c of allContacts) {
     if (!teamMap[c.assignedTo]) teamMap[c.assignedTo] = { total: 0, done: 0 };
     teamMap[c.assignedTo].total++;
-    if (c.status === "DONE") teamMap[c.assignedTo].done++;
+    const effectiveStatus =
+      c.assignedTo === assignedTo
+        ? (sheetStatuses.get(c.rowIndex) ?? c.status)
+        : c.status;
+    if (effectiveStatus === "DONE") teamMap[c.assignedTo].done++;
   }
   const teamStats = Object.entries(teamMap).sort((a, b) => b[1].done - a[1].done);
 
