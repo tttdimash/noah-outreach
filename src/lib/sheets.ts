@@ -22,7 +22,10 @@ export async function getSheetStatuses(
     const values = response.data.values ?? [];
     values.forEach((row, i) => {
       const rowIndex = i + 2; // H2 = row 2
-      map.set(rowIndex, row[0] ?? "Not Started");
+      const val = (row[0] ?? "").trim();
+      if (val) {
+        map.set(rowIndex, val.toUpperCase() === "DONE" ? "DONE" : val);
+      }
     });
   } catch (err) {
     console.error("Failed to read sheet statuses:", err);

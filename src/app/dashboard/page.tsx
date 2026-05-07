@@ -36,14 +36,14 @@ export default async function DashboardPage() {
     const [contacts, sheetStatuses] = await Promise.all([
       prisma.contact.findMany({
         where: { assignedTo },
-        select: { day: true, rowIndex: true },
+        select: { day: true, rowIndex: true, status: true },
       }),
       getSheetStatuses(session.accessToken ?? ""),
     ]);
 
     const map: Record<string, { total: number; done: number; notStarted: number }> = {};
     for (const c of contacts) {
-      const status = sheetStatuses.get(c.rowIndex) ?? "Not Started";
+      const status = sheetStatuses.get(c.rowIndex) ?? c.status;
       if (!map[c.day]) map[c.day] = { total: 0, done: 0, notStarted: 0 };
       map[c.day].total++;
       if (status === "DONE") map[c.day].done++;
