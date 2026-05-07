@@ -2,11 +2,9 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
-import { getSheetStatuses } from "@/lib/sheets";
 import Link from "next/link";
 import SignOutButton from "@/components/SignOutButton";
 import CSVUpload from "@/components/CSVUpload";
-import SyncSheetButton from "@/components/SyncSheetButton";
 
 async function resolveAssignedTo(userName: string): Promise<string | null> {
   const rows = await prisma.contact.findMany({
@@ -34,17 +32,14 @@ export default async function DashboardPage() {
   let days: { day: string; total: number; done: number; notStarted: number }[] = [];
 
   if (assignedTo) {
-    const [contacts, sheetStatuses] = await Promise.all([
-      prisma.contact.findMany({
-        where: { assignedTo },
-        select: { day: true, rowIndex: true, status: true },
-      }),
-      getSheetStatuses(session.accessToken ?? ""),
-    ]);
+    const contacts = await prisma.contact.findMany({
+      where: { assignedTo },
+      select: { day: true, status: true },
+    });
 
     const map: Record<string, { total: number; done: number; notStarted: number }> = {};
     for (const c of contacts) {
-      const status = sheetStatuses.get(c.rowIndex) ?? c.status;
+      const status = c.status;
       if (!map[c.day]) map[c.day] = { total: 0, done: 0, notStarted: 0 };
       map[c.day].total++;
       if (status === "DONE") map[c.day].done++;
@@ -74,7 +69,6 @@ export default async function DashboardPage() {
             )}
           </p>
         </div>
-        <SyncSheetButton />
         <SignOutButton />
       </header>
 

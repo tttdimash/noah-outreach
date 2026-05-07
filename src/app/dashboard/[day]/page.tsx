@@ -2,7 +2,6 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
-import { getSheetStatuses } from "@/lib/sheets";
 import Link from "next/link";
 import { buildEmailBody, EMAIL_SUBJECT } from "@/lib/emailTemplate";
 import SendAllButton from "@/components/SendAllButton";
@@ -44,15 +43,7 @@ export default async function DayPage({
       })
     : [];
 
-  // Read statuses live from Google Sheet
-  const sheetStatuses = await getSheetStatuses(session.accessToken ?? "");
-
-  // Merge sheet status into contacts
-  const contacts = dbContacts.map((c) => ({
-    ...c,
-    status: sheetStatuses.get(c.rowIndex) ?? c.status,
-  }));
-
+  const contacts = dbContacts;
   const notStarted = contacts.filter((c) => c.status !== "DONE");
   const senderName = session.user.name ?? "Team Member";
 
