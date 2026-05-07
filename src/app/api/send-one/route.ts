@@ -3,7 +3,7 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { sendEmail } from "@/lib/gmail";
-import { buildEmailBody, EMAIL_SUBJECT } from "@/lib/emailTemplate";
+import { buildEmailBody, buildEmailHtml, EMAIL_SUBJECT } from "@/lib/emailTemplate";
 
 export async function POST(req: NextRequest) {
   const session = await getServerSession(authOptions);
@@ -26,12 +26,14 @@ export async function POST(req: NextRequest) {
 
   try {
     const body = buildEmailBody({ firstName: contact.firstName, senderName });
+    const html = buildEmailHtml({ firstName: contact.firstName, senderName });
     await sendEmail({
       accessToken: session.accessToken,
       to: contact.email,
       from: `${senderName} <${senderEmail}>`,
       subject: EMAIL_SUBJECT,
       body,
+      html,
     });
 
     await prisma.contact.update({
