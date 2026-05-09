@@ -1,10 +1,8 @@
-import { PrismaAdapter } from "@auth/prisma-adapter";
 import GoogleProvider from "next-auth/providers/google";
 import type { NextAuthOptions } from "next-auth";
-import { prisma } from "./prisma";
 
 export const authOptions: NextAuthOptions = {
-  adapter: PrismaAdapter(prisma) as NextAuthOptions["adapter"],
+  session: { strategy: "jwt" },
   providers: [
     GoogleProvider({
       clientId: process.env.GOOGLE_CLIENT_ID!,
@@ -20,49 +18,42 @@ export const authOptions: NextAuthOptions = {
     }),
   ],
   callbacks: {
-    async session({ session, user }) {
-      const account = await prisma.account.findFirst({
-        where: { userId: user.id, provider: "google" },
-      });
+    async jwt({ token, account }) {
       if (account) {
-        session.user.id = user.id;
+        token.accessToken = account.access_token;
+        token.refreshToken = account.refresh_token;
+        token.expiresAt = account.expires_at;
+      }
 
-        // Refresh the access token if it's expired or about to expire
-        const expiresAt = (account.expires_at ?? 0) * 1000;
-        const isExpired = Date.now() > expiresAt - 60_000;
-
-        if (isExpired && account.refresh_token) {
-          try {
-            const response = await fetch("https://oauth2.googleapis.com/token", {
-              method: "POST",
-              headers: { "Content-Type": "application/x-www-form-urlencoded" },
-              body: new URLSearchParams({
-                client_id: process.env.GOOGLE_CLIENT_ID!,
-                client_secret: process.env.GOOGLE_CLIENT_SECRET!,
-                grant_type: "refresh_token",
-                refresh_token: account.refresh_token,
-              }),
-            });
-            const tokens = await response.json();
-            if (tokens.access_token) {
-              await prisma.account.update({
-                where: { id: account.id },
-                data: {
-                  access_token: tokens.access_token,
-                  expires_at: Math.floor(Date.now() / 1000) + (tokens.expires_in ?? 3600),
-                },
-              });
-              session.accessToken = tokens.access_token;
-            } else {
-              session.accessToken = account.access_token ?? undefined;
-            }
-          } catch {
-            session.accessToken = account.access_token ?? undefined;
+      // Refresh access token if expired or about to expire
+      const expiresAt = (token.expiresAt as number ?? 0) * 1000;
+      if (token.refreshToken && Date.now() > expiresAt - 60_000) {
+        try {
+          const response = await fetch("https://oauth2.googleapis.com/token", {
+            method: "POST",
+            headers: { "Content-Type": "application/x-www-form-urlencoded" },
+            body: new URLSearchParams({
+              client_id: process.env.GOOGLE_CLIENT_ID!,
+              client_secret: process.env.GOOGLE_CLIENT_SECRET!,
+              grant_type: "refresh_token",
+              refresh_token: token.refreshToken as string,
+            }),
+          });
+          const tokens = await response.json();
+          if (tokens.access_token) {
+            token.accessToken = tokens.access_token;
+            token.expiresAt = Math.floor(Date.now() / 1000) + (tokens.expires_in ?? 3600);
           }
-        } else {
-          session.accessToken = account.access_token ?? undefined;
+        } catch (err) {
+          console.error("Failed to refresh token:", err);
         }
       }
+
+      return token;
+    },
+    async session({ session, token }) {
+      session.accessToken = token.accessToken as string | undefined;
+      session.user.id = token.sub!;
       return session;
     },
   },

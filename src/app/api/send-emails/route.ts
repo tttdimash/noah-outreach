@@ -1,9 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
-import { prisma } from "@/lib/prisma";
 import { sendEmail } from "@/lib/gmail";
 import { buildEmailBody, buildEmailHtml, EMAIL_SUBJECT } from "@/lib/emailTemplate";
+import { getSheetContacts, updateSheetStatus } from "@/lib/sheets";
 
 export async function POST(req: NextRequest) {
   const session = await getServerSession(authOptions);
@@ -19,22 +19,20 @@ export async function POST(req: NextRequest) {
   const senderName = session.user.name;
   const senderEmail = session.user.email!;
 
-  // Find the CSV assignedTo name that matches this user
-  const assignedToName = await resolveAssignedTo(senderName);
-  if (!assignedToName) {
+  const allContacts = await getSheetContacts(session.accessToken);
+  const allNames = [...new Set(allContacts.map((c) => c.assignedTo))];
+  const assignedTo = resolveAssignedTo(senderName, allNames);
+
+  if (!assignedTo) {
     return NextResponse.json(
       { error: `No contacts found matching your name: ${senderName}` },
       { status: 404 }
     );
   }
 
-  const contacts = await prisma.contact.findMany({
-    where: {
-      day,
-      assignedTo: assignedToName,
-      status: "Not Started",
-    },
-  });
+  const contacts = allContacts.filter(
+    (c) => c.day === day && c.assignedTo === assignedTo && c.status !== "DONE"
+  );
 
   const sent: string[] = [];
   const failed: string[] = [];
@@ -43,7 +41,6 @@ export async function POST(req: NextRequest) {
     try {
       const body = buildEmailBody({ firstName: contact.firstName, senderName });
       const html = buildEmailHtml({ firstName: contact.firstName, senderName });
-
       await sendEmail({
         accessToken: session.accessToken,
         to: contact.email,
@@ -52,12 +49,7 @@ export async function POST(req: NextRequest) {
         body,
         html,
       });
-
-      await prisma.contact.update({
-        where: { id: contact.id },
-        data: { status: "DONE" },
-      });
-
+      await updateSheetStatus(session.accessToken, contact.rowIndex);
       sent.push(contact.email);
     } catch (err) {
       console.error(`Failed to send to ${contact.email}:`, err);
@@ -68,23 +60,14 @@ export async function POST(req: NextRequest) {
   return NextResponse.json({ sent: sent.length, failed });
 }
 
-async function resolveAssignedTo(userName: string): Promise<string | null> {
-  // Get all unique assignedTo values from DB
-  const rows = await prisma.contact.findMany({
-    distinct: ["assignedTo"],
-    select: { assignedTo: true },
-  });
-
-  const allNames = rows.map((r) => r.assignedTo);
-
-  // Find best match: user's display name contains or matches CSV name
+function resolveAssignedTo(userName: string, allNames: string[]): string | null {
   const userLower = userName.toLowerCase();
-  const match = allNames.find(
-    (n) =>
-      userLower.includes(n.toLowerCase()) ||
-      n.toLowerCase().includes(userLower) ||
-      userLower.split(" ")[0] === n.toLowerCase().split(" ")[0]
+  return (
+    allNames.find(
+      (n) =>
+        userLower.includes(n.toLowerCase()) ||
+        n.toLowerCase().includes(userLower) ||
+        userLower.split(" ")[0] === n.toLowerCase().split(" ")[0]
+    ) ?? null
   );
-
-  return match ?? null;
 }

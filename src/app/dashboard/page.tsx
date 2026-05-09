@@ -1,18 +1,11 @@
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { redirect } from "next/navigation";
-import { prisma } from "@/lib/prisma";
-import { getSheetStatuses } from "@/lib/sheets";
+import { getSheetContacts } from "@/lib/sheets";
 import Link from "next/link";
 import SignOutButton from "@/components/SignOutButton";
-import CSVUpload from "@/components/CSVUpload";
 
-async function resolveAssignedTo(userName: string): Promise<string | null> {
-  const rows = await prisma.contact.findMany({
-    distinct: ["assignedTo"],
-    select: { assignedTo: true },
-  });
-  const allNames = rows.map((r) => r.assignedTo);
+function resolveAssignedTo(userName: string, allNames: string[]): string | null {
   const userLower = userName.toLowerCase();
   return (
     allNames.find(
@@ -28,22 +21,17 @@ export default async function DashboardPage() {
   const session = await getServerSession(authOptions);
   if (!session) redirect("/login");
 
-  const assignedTo = await resolveAssignedTo(session.user.name ?? "");
+  const allContacts = await getSheetContacts(session.accessToken ?? "");
+  const allNames = [...new Set(allContacts.map((c) => c.assignedTo))];
+  const assignedTo = resolveAssignedTo(session.user.name ?? "", allNames);
 
   let days: { day: string; total: number; done: number; notStarted: number }[] = [];
-
-  const [allContacts, sheetStatuses] = await Promise.all([
-    prisma.contact.findMany({
-      select: { day: true, assignedTo: true, rowIndex: true, status: true },
-    }),
-    assignedTo ? getSheetStatuses(session.accessToken ?? "") : Promise.resolve(new Map<number, string>()),
-  ]);
 
   if (assignedTo) {
     const myContacts = allContacts.filter((c) => c.assignedTo === assignedTo);
     const map: Record<string, { total: number; done: number; notStarted: number }> = {};
     for (const c of myContacts) {
-      const status = sheetStatuses.get(c.rowIndex) ?? c.status;
+      const status = c.status;
       if (!map[c.day]) map[c.day] = { total: 0, done: 0, notStarted: 0 };
       map[c.day].total++;
       if (status === "DONE") map[c.day].done++;
@@ -58,18 +46,12 @@ export default async function DashboardPage() {
       .map((d) => ({ day: d, ...map[d] }));
   }
 
-  const totalContacts = allContacts.length;
-
-  // Team stats — use sheet status for logged-in user's contacts, DB for others
+  // Team stats — read directly from sheet
   const teamMap: Record<string, { total: number; done: number }> = {};
   for (const c of allContacts) {
     if (!teamMap[c.assignedTo]) teamMap[c.assignedTo] = { total: 0, done: 0 };
     teamMap[c.assignedTo].total++;
-    const effectiveStatus =
-      c.assignedTo === assignedTo
-        ? (sheetStatuses.get(c.rowIndex) ?? c.status)
-        : c.status;
-    if (effectiveStatus === "DONE") teamMap[c.assignedTo].done++;
+    if (c.status === "DONE") teamMap[c.assignedTo].done++;
   }
   const teamStats = Object.entries(teamMap).sort((a, b) => b[1].done - a[1].done);
 
@@ -159,16 +141,6 @@ export default async function DashboardPage() {
           </div>
         </div>
 
-        <div className="mt-6 pt-6 border-t border-gray-200">
-          <div className="flex items-center justify-between mb-1">
-            <h3 className="text-sm font-medium text-gray-700">Contact List</h3>
-            <span className="text-xs text-gray-400">{totalContacts} contacts loaded</span>
-          </div>
-          <p className="text-xs text-gray-400 mb-3">
-            The current contact list is already loaded. Upload a new CSV to replace it.
-          </p>
-          <CSVUpload />
-        </div>
       </main>
     </div>
   );

@@ -1,19 +1,13 @@
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { redirect } from "next/navigation";
-import { prisma } from "@/lib/prisma";
-import { getSheetStatuses } from "@/lib/sheets";
+import { getSheetContacts } from "@/lib/sheets";
 import Link from "next/link";
 import { buildEmailBody, EMAIL_SUBJECT } from "@/lib/emailTemplate";
 import SendAllButton from "@/components/SendAllButton";
 import SendOneButton from "@/components/SendOneButton";
 
-async function resolveAssignedTo(userName: string): Promise<string | null> {
-  const rows = await prisma.contact.findMany({
-    distinct: ["assignedTo"],
-    select: { assignedTo: true },
-  });
-  const allNames = rows.map((r) => r.assignedTo);
+function resolveAssignedTo(userName: string, allNames: string[]): string | null {
   const userLower = userName.toLowerCase();
   return (
     allNames.find(
@@ -35,20 +29,15 @@ export default async function DayPage({
 
   const { day } = await params;
   const decodedDay = decodeURIComponent(day);
-  const assignedTo = await resolveAssignedTo(session.user.name ?? "");
 
-  const dbContacts = assignedTo
-    ? await prisma.contact.findMany({
-        where: { day: decodedDay, assignedTo },
-        orderBy: { lastName: "asc" },
-      })
-    : [];
+  const allContacts = await getSheetContacts(session.accessToken ?? "");
+  const allNames = [...new Set(allContacts.map((c) => c.assignedTo))];
+  const assignedTo = resolveAssignedTo(session.user.name ?? "", allNames);
 
-  const sheetStatuses = await getSheetStatuses(session.accessToken ?? "");
-  const contacts = dbContacts.map((c) => ({
-    ...c,
-    status: sheetStatuses.get(c.rowIndex) ?? c.status,
-  }));
+  const contacts = allContacts
+    .filter((c) => c.day === decodedDay && c.assignedTo === assignedTo)
+    .sort((a, b) => a.lastName.localeCompare(b.lastName));
+
   const notStarted = contacts.filter((c) => c.status !== "DONE");
   const senderName = session.user.name ?? "Team Member";
 
@@ -89,7 +78,7 @@ export default async function DayPage({
 
           return (
             <details
-              key={contact.id}
+              key={contact.rowIndex}
               className={`bg-white rounded-xl border transition-all ${
                 isDone ? "border-green-200 opacity-75" : "border-gray-200"
               }`}
@@ -128,7 +117,13 @@ export default async function DayPage({
                 <pre className="text-sm text-gray-700 whitespace-pre-wrap font-sans bg-gray-50 rounded-lg p-4 border border-gray-100">
                   {emailBody}
                 </pre>
-                {!isDone && <SendOneButton contactId={contact.id} />}
+                {!isDone && (
+                  <SendOneButton
+                    rowIndex={contact.rowIndex}
+                    firstName={contact.firstName}
+                    email={contact.email}
+                  />
+                )}
               </div>
             </details>
           );

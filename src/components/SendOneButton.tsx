@@ -3,7 +3,15 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 
-export default function SendOneButton({ contactId }: { contactId: number }) {
+export default function SendOneButton({
+  rowIndex,
+  firstName,
+  email,
+}: {
+  rowIndex: number;
+  firstName: string;
+  email: string;
+}) {
   const [state, setState] = useState<"idle" | "sending" | "done" | "error">("idle");
   const router = useRouter();
 
@@ -13,7 +21,7 @@ export default function SendOneButton({ contactId }: { contactId: number }) {
       const res = await fetch("/api/send-one", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ contactId }),
+        body: JSON.stringify({ rowIndex, firstName, email }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "Failed");
@@ -49,18 +57,13 @@ export default function SendOneButton({ contactId }: { contactId: number }) {
   }
 
   if (state === "done") {
-    return (
-      <p className="mt-4 text-sm text-green-600 font-medium">Sent!</p>
-    );
+    return <p className="mt-4 text-sm text-green-600 font-medium">Sent!</p>;
   }
 
   return (
     <div className="mt-4 flex items-center gap-2">
       <p className="text-sm text-red-600">Failed to send.</p>
-      <button
-        onClick={() => setState("idle")}
-        className="text-sm text-gray-500 underline"
-      >
+      <button onClick={() => setState("idle")} className="text-sm text-gray-500 underline">
         Retry
       </button>
     </div>
