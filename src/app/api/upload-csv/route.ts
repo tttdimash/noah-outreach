@@ -59,7 +59,7 @@ export async function POST(req: NextRequest) {
       organization: r["Organization"] ?? "",
       email: r["Email Address"] ?? "",
       linkedinUrl: r["LinkedIn URL"] || null,
-      status: r["Status"] ?? "Not Started",
+      status: r["Status"] === "DONE" ? "DONE" : "Not Started",
       rowIndex: parseInt(r["__rowIndex"] ?? "0"),
     }))
     .filter((c) => c.day && c.assignedTo && c.email);
